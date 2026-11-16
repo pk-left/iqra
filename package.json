@@ -1,0 +1,131 @@
+{
+  "name": "iqra",
+  "productName": "Iqra",
+  "version": "1.1.0",
+  "description": "Iqra - a book reader and library for every format",
+  "author": "PK",
+  "license": "MIT",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win"
+  },
+  "dependencies": {
+    "7z-wasm": "^1.2.0",
+    "node-unrar-js": "^2.0.2",
+    "word-extractor": "^1.0.4"
+  },
+  "devDependencies": {
+    "electron": "^40.10.2",
+    "electron-builder": "^26.18.0"
+  },
+  "build": {
+    "appId": "com.pkleft.iqra",
+    "productName": "Iqra",
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Iqra",
+      "runAfterFinish": true,
+      "deleteAppDataOnUninstall": false,
+      "artifactName": "Iqra-Setup-${version}.exe"
+    },
+    "fileAssociations": [
+      {
+        "ext": "epub",
+        "name": "EPUB book",
+        "description": "EPUB book",
+        "role": "Viewer",
+        "icon": "build/icon.ico"
+      },
+      {
+        "ext": "mobi",
+        "name": "Mobipocket book",
+        "description": "Mobipocket book",
+        "role": "Viewer",
+        "icon": "build/icon.ico"
+      },
+      {
+        "ext": "azw3",
+        "name": "Kindle book",
+        "description": "Kindle book",
+        "role": "Viewer",
+        "icon": "build/icon.ico"
+      },
+      {
+        "ext": "azw",
+        "name": "Kindle book",
+        "description": "Kindle book",
+        "role": "Viewer",
+        "icon": "build/icon.ico"
+      },
+      {
+        "ext": "fb2",
+        "name": "FictionBook",
+        "description": "FictionBook",
+        "role": "Viewer",
+        "icon": "build/icon.ico"
+      },
+      {
+        "ext": "cbz",
+        "name": "Comic book",
+        "description": "Comic book",
+        "role": "Viewer",
+        "icon": "build/icon.ico"
+      },
+      {
+        "ext": "cbr",
+        "name": "Comic book",
+        "description": "Comic book",
+        "role": "Viewer",
+        "icon": "build/icon.ico"
+      },
+      {
+        "ext": "cb7",
+        "name": "Comic book",
+        "description": "Comic book",
+        "role": "Viewer",
+        "icon": "build/icon.ico"
+      },
+      {
+        "ext": "djvu",
+        "name": "DjVu document",
+        "description": "DjVu document",
+        "role": "Viewer",
+        "icon": "build/icon.ico"
+      },
+      {
+        "ext": "pdf",
+        "name": "PDF document",
+        "description": "PDF document",
+        "role": "Viewer",
+        "icon": "build/icon.ico"
+      }
+    ],
+    "asar": false,
+    "files": [
+      "main.js",
+      "preload.js",
+      "app/**/*",
+      "build/**/*",
+      "!**/*.bak*",
+      "!app/js/selftest.js"
+    ]
+  }
+}

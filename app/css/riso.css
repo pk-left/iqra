@@ -1,0 +1,295 @@
+/* =========================================================================
+   Iqra "Riso" style: a risograph-printed bookshop.
+   Two inks (fluoro pink + blue) that never quite line up, halftone dots,
+   newsprint, typewritten library cards, rubber stamps and washi tape.
+   Classic style is untouched: everything here is scoped to [data-style="riso"].
+   ========================================================================= */
+@font-face { font-family: "Fraunces"; src: url("../fonts/riso/fraunces.woff2") format("woff2"); font-weight: 100 900; font-display: block; }
+@font-face { font-family: "Fraunces"; src: url("../fonts/riso/fraunces-italic.woff2") format("woff2"); font-weight: 100 900; font-style: italic; font-display: block; }
+@font-face { font-family: "Courier Prime"; src: url("../fonts/riso/courier-prime.woff2") format("woff2"); font-weight: 400; font-display: block; }
+@font-face { font-family: "Courier Prime"; src: url("../fonts/riso/courier-prime-bold.woff2") format("woff2"); font-weight: 700; font-display: block; }
+@font-face { font-family: "Special Elite"; src: url("../fonts/riso/special-elite.woff2") format("woff2"); font-display: block; }
+
+/* stamp and tape helpers only exist in this style */
+.stamp { display: none; }
+
+:root[data-style="riso"] {
+  --pink: #ff48b0; --blue: #3255a4; --yellow: #ffe14d; --teal: #00a19a;
+  --ink: #1d1b3a; --card: #fbf7ee; --rule: rgba(50, 85, 164, .16);
+  --paper: url("../img/riso/paper.jpg");
+  --display: "Fraunces", Georgia, serif; --type: "Courier Prime", "Courier New", monospace; --stampf: "Special Elite", "Courier New", monospace;
+  --halftone: radial-gradient(circle at center, var(--pink) 1.1px, transparent 1.6px) 0 0 / 5px 5px;
+  --halftone-blue: radial-gradient(circle at center, var(--blue) 1px, transparent 1.5px) 0 0 / 5px 5px;
+  --serif: var(--display);
+}
+:root[data-style="riso"][data-mode="dark"] {
+  --pink: #ff5cb8; --blue: #7d95ff; --yellow: #ffe14d; --teal: #3fd6c8;
+  --ink: #f1e9d6; --card: #211f3a; --rule: rgba(125, 149, 255, .14);
+  --paper: url("../img/riso/paper-night.jpg");
+}
+
+/* ---------- paper ---------- */
+[data-style="riso"] body { background: var(--bg) var(--paper) repeat; background-size: 512px; }
+[data-style="riso"] #app { background: none; }
+[data-style="riso"] ::-webkit-scrollbar-thumb { background: var(--ink); border: 3px solid transparent; background-clip: padding-box; border-radius: 0; }
+[data-style="riso"] h1, [data-style="riso"] h2, [data-style="riso"] h3 { font-family: var(--display); font-variation-settings: "SOFT" 100, "WONK" 1; letter-spacing: -.01em; }
+[data-style="riso"] ::selection { background: var(--yellow); color: #1d1b3a; }
+
+/* misprinted two-ink headline */
+[data-style="riso"] :is(#topbar h1, .hero h1, .brand b, .empty h3, .details-grid .info h1) {
+  color: var(--blue); text-shadow: 2.5px 1.5px 0 color-mix(in srgb, var(--pink) 85%, transparent);
+}
+
+/* ---------- card-catalogue sidebar ---------- */
+[data-style="riso"] #sidebar {
+  background: color-mix(in srgb, var(--bg2) 70%, transparent);
+  border-right: 2px solid var(--ink);
+  box-shadow: inset -7px 0 0 -5px var(--pink);
+}
+[data-style="riso"] .brand { padding: 18px 18px 12px; gap: 8px; }
+[data-style="riso"] .brand img { display: none; }
+[data-style="riso"] .brand::before {
+  content: ""; width: 34px; height: 34px; flex: none; transform: rotate(-8deg);
+  background: url("../img/riso/mark.svg") center / contain no-repeat;
+}
+[data-style="riso"] .brand b { font-size: 1.55em; font-weight: 900; font-style: italic; letter-spacing: -.02em; }
+[data-style="riso"] .navhead {
+  font-family: var(--stampf); font-weight: 400; font-size: .8em; letter-spacing: .14em; color: var(--text2);
+  padding: 18px 10px 6px; position: relative;
+}
+[data-style="riso"] .navhead::after { content: ""; flex: 1; margin: 0 8px; height: 1px; border-top: 1.5px dotted var(--text3); order: 0; }
+[data-style="riso"] .navhead .mini { order: 1; }
+[data-style="riso"] .nav { border-radius: 0; padding: 6px 10px; color: var(--text); position: relative; z-index: 0; }
+[data-style="riso"] .nav .icon { color: var(--blue); }
+[data-style="riso"] .nav small { font-family: var(--type); color: var(--text2); }
+[data-style="riso"] .nav:hover { background: none; }
+[data-style="riso"] .nav::before { /* highlighter swipe */
+  content: ""; position: absolute; left: 2px; right: 6px; top: 18%; bottom: 14%; z-index: -1;
+  background: var(--yellow); transform: skew(-12deg) scaleX(0); transform-origin: left;
+  border-radius: 2px 6px 3px 8px; transition: transform .22s cubic-bezier(.3,.7,.2,1); opacity: .75;
+}
+[data-style="riso"] .nav:hover::before { transform: skew(-12deg) scaleX(1); }
+[data-style="riso"] .nav.on { background: none; font-weight: 700; }
+[data-style="riso"] .nav.on::before { transform: skew(-12deg) scaleX(1); background: var(--pink); opacity: .9; }
+[data-style="riso"] .nav.on .icon { color: var(--ink); }
+[data-style="riso"][data-mode="dark"] .nav.on { color: #1d1b3a; } [data-style="riso"][data-mode="dark"] .nav.on .icon, [data-style="riso"][data-mode="dark"] .nav.on small { color: #1d1b3a; }
+[data-style="riso"][data-mode="dark"] .nav:hover { color: #1d1b3a; } [data-style="riso"][data-mode="dark"] .nav:hover :is(.icon, small) { color: #1d1b3a; }
+[data-style="riso"] .side-foot { border-top: 2px solid var(--ink); }
+[data-style="riso"] .progress .pl { font-family: var(--type); }
+
+/* ---------- top bar ---------- */
+[data-style="riso"] #topbar { height: 64px; }
+[data-style="riso"] #topbar h1 { font-size: 1.85em; font-weight: 900; font-style: italic; }
+[data-style="riso"] #topbar .count { font-family: var(--type); color: var(--text2); }
+[data-style="riso"] .search {
+  background: var(--card); border: 1.5px solid var(--ink); border-radius: 2px; color: var(--text2);
+  box-shadow: 3px 3px 0 var(--blue);
+}
+[data-style="riso"] .search input { font-family: var(--type); color: var(--text); border: 0 !important; background: none !important; box-shadow: none !important; padding-left: 0; }
+[data-style="riso"] .search:focus-within { border-color: var(--ink); box-shadow: 3px 3px 0 var(--pink); }
+
+/* ---------- controls ---------- */
+[data-style="riso"] .btn {
+  border-radius: 2px; border: 1.5px solid var(--ink); background: var(--card); color: var(--text);
+  box-shadow: 2px 2px 0 var(--ink); transition: transform .1s, box-shadow .1s;
+}
+[data-style="riso"] .btn:hover { background: var(--card); transform: translate(-1px, -1px); box-shadow: 3px 3px 0 var(--ink); }
+[data-style="riso"] .btn:active { transform: translate(1px, 1px); box-shadow: 0 0 0 var(--ink); }
+[data-style="riso"] .btn.primary { background: var(--pink); color: #1d1b3a; border-color: #1d1b3a; font-weight: 700; box-shadow: 3px 3px 0 var(--blue); }
+[data-style="riso"] .btn.primary:hover { filter: none; box-shadow: 4px 4px 0 var(--blue); }
+[data-style="riso"] .icon-btn { border-radius: 2px; }
+[data-style="riso"] .icon-btn:hover { background: var(--yellow); color: #1d1b3a; }
+[data-style="riso"] a.link, [data-style="riso"] button.link { color: var(--blue); font-family: var(--type); font-weight: 700; }
+[data-style="riso"] .shelf header a.link::after { content: " →"; }
+[data-style="riso"] :is(input[type=text], input[type=search], textarea, select) { border-radius: 2px; border: 1.5px solid var(--ink); background: var(--card); }
+[data-style="riso"] .seg { border-radius: 2px; border: 1.5px solid var(--ink); background: var(--card); padding: 3px; }
+[data-style="riso"] .seg button { border-radius: 1px; font-family: var(--type); }
+[data-style="riso"] .seg button.on { background: var(--blue); color: #fff; box-shadow: 2px 2px 0 var(--pink); }
+[data-style="riso"] .switch i { border-radius: 2px; background: var(--card); border: 1.5px solid var(--ink); }
+[data-style="riso"] .switch i::after { border-radius: 1px; background: var(--ink); top: 2px; left: 2px; }
+[data-style="riso"] .switch input:checked + i { background: var(--pink); }
+[data-style="riso"] .switch input:checked + i::after { background: #1d1b3a; }
+[data-style="riso"] .chip { border-radius: 2px; border: 1.5px solid var(--ink); background: var(--card); font-family: var(--type); }
+[data-style="riso"] .row { border-bottom: 1.5px dotted color-mix(in srgb, var(--ink) 35%, transparent); }
+[data-style="riso"] kbd { font-family: var(--type); border-radius: 2px; border: 1.5px solid var(--ink); box-shadow: 1px 2px 0 var(--ink); background: var(--card); color: var(--text); }
+[data-style="riso"] .bar { background: color-mix(in srgb, var(--ink) 12%, transparent); border-radius: 0; height: 5px; }
+[data-style="riso"] .bar i { background: var(--pink); border-radius: 0; }
+
+/* ---------- home: the library checkout card ---------- */
+[data-style="riso"] .hero {
+  position: relative; border-radius: 3px; padding: 26px 30px 24px 74px; margin: 10px 8px 34px 0;
+  border: 1.5px solid var(--ink); transform: rotate(-.35deg);
+  background:
+    linear-gradient(90deg, transparent 52px, color-mix(in srgb, var(--pink) 70%, transparent) 52px 54px, transparent 54px),
+    repeating-linear-gradient(180deg, transparent 0 27px, var(--rule) 27px 28px),
+    var(--card);
+  box-shadow: 8px 8px 0 -1px var(--bg), 8px 8px 0 0 var(--ink);
+}
+[data-style="riso"] .hero::before { /* punched hole */
+  content: ""; position: absolute; left: 18px; top: 50%; width: 16px; height: 16px; margin-top: -8px; border-radius: 50%;
+  background: var(--bg) var(--paper); background-size: 512px; box-shadow: inset 1px 1px 0 color-mix(in srgb, var(--ink) 40%, transparent);
+}
+[data-style="riso"] .hero h1 { font-size: 2.5em; font-weight: 900; line-height: 1; }
+[data-style="riso"] .hero p { font-family: var(--type); color: var(--text2); margin-top: 10px; }
+[data-style="riso"] .hero .stamp {
+  display: inline-flex; flex-direction: column; align-items: center; position: absolute; left: 47%; top: 12px; font-size: 1.05em; font-weight: 700;
+  font-family: var(--stampf); color: var(--pink); text-transform: uppercase; letter-spacing: .1em; line-height: 1.05;
+  padding: 6px 14px 4px; border: 3px solid currentColor; border-radius: 6px; transform: rotate(-9deg);
+  outline: 1.5px solid currentColor; outline-offset: 2px; opacity: .95;
+  -webkit-mask: url("../img/riso/grunge.png") center / 220px; mix-blend-mode: multiply; pointer-events: none;
+}
+[data-style="riso"][data-mode="dark"] .hero .stamp { mix-blend-mode: screen; }
+[data-style="riso"] .hero .stamp small { font-size: .62em; letter-spacing: .2em; }
+[data-style="riso"] .hero .stamp b { font-weight: 400; font-size: 1.55em; line-height: 1; }
+[data-style="riso"] .gl { font-family: var(--display); font-weight: 800; font-size: 1.15em; }
+[data-style="riso"] .gs { font-family: var(--type); color: var(--text2); }
+[data-style="riso"] .gs .icon { color: var(--pink); }
+[data-style="riso"] .ring {
+  width: 92px; height: 92px; border-radius: 50%;
+  background: conic-gradient(var(--pink) calc(var(--p) * 360deg), transparent 0), var(--halftone-blue);
+  border: 2px solid var(--ink);
+}
+[data-style="riso"] .ring::before { inset: 9px; background: var(--card); border: 1.5px dashed var(--ink); }
+[data-style="riso"] .ring b { font-family: var(--display); font-weight: 900; font-size: 1.7em; color: var(--blue); }
+[data-style="riso"] .ring small { font-family: var(--type); color: var(--text2); }
+
+[data-style="riso"] .shelf h2 { font-size: 1.6em; font-style: italic; font-weight: 800; position: relative; padding-bottom: 6px; }
+[data-style="riso"] .shelf h2::after { /* halftone rule */
+  content: ""; position: absolute; left: 0; bottom: -2px; width: 120%; height: 6px; background: var(--halftone);
+}
+[data-style="riso"] .shelf header { margin-bottom: 16px; }
+
+/* continue-reading library cards with a perforated edge */
+[data-style="riso"] .continue {
+  position: relative; border-radius: 2px; padding: 14px 14px 14px 26px; border: 1.5px solid var(--ink);
+  background:
+    radial-gradient(circle at 8px 10px, var(--bg) 3.5px, transparent 4px) 0 0 / 16px 18px repeat-y,
+    repeating-linear-gradient(180deg, transparent 0 21px, var(--rule) 21px 22px), var(--card);
+  box-shadow: 4px 4px 0 var(--blue); transition: transform .15s, box-shadow .15s;
+}
+[data-style="riso"] .continue::before { content: ""; position: absolute; left: 15px; top: 6px; bottom: 6px; border-left: 1.5px dashed color-mix(in srgb, var(--ink) 45%, transparent); }
+[data-style="riso"] .continue:hover { border-color: var(--ink); transform: translate(-2px, -2px) rotate(-.6deg); box-shadow: 6px 6px 0 var(--pink); }
+[data-style="riso"] .continue .cover { box-shadow: 3px 3px 0 var(--ink); }
+[data-style="riso"] .continue .t { font-family: var(--display); font-weight: 800; font-size: 1.05em; }
+[data-style="riso"] .continue .a, [data-style="riso"] .cinfo .sub { font-family: var(--type); }
+[data-style="riso"] .cinfo .bar { height: 10px; border: 1.5px solid var(--ink); background: repeating-linear-gradient(90deg, transparent 0 9px, color-mix(in srgb, var(--ink) 35%, transparent) 9px 10px), var(--card); }
+[data-style="riso"] .cinfo .bar i { background: var(--halftone), var(--pink); background-blend-mode: multiply; }
+
+/* ---------- books ---------- */
+[data-style="riso"] .book { position: relative; outline-offset: 6px; }
+[data-style="riso"] .cover {
+  box-shadow: 5px 5px 0 color-mix(in srgb, var(--blue) 85%, transparent);
+  transition: transform .18s cubic-bezier(.3,.7,.2,1.3), box-shadow .18s;
+}
+[data-style="riso"] .book:nth-child(3n+1) .cover { box-shadow: 5px 5px 0 color-mix(in srgb, var(--pink) 85%, transparent); }
+[data-style="riso"] .book:hover .cover { transform: translate(-3px, -5px) rotate(-1.6deg); box-shadow: 9px 10px 0 var(--pink); }
+[data-style="riso"] .book:nth-child(even):hover .cover { transform: translate(-3px, -5px) rotate(1.4deg); box-shadow: 9px 10px 0 var(--blue); }
+[data-style="riso"] .book.selected .cover { outline: 3px solid var(--yellow); outline-offset: 3px; }
+/* washi tape on books you are reading */
+[data-style="riso"] .book.reading::before {
+  content: ""; position: absolute; z-index: 3; top: -9px; left: 50%; width: 58px; height: 20px; margin-left: -29px;
+  background: repeating-linear-gradient(45deg, color-mix(in srgb, var(--yellow) 80%, transparent) 0 6px, color-mix(in srgb, var(--yellow) 60%, transparent) 6px 12px);
+  clip-path: polygon(3% 0, 97% 4%, 100% 30%, 96% 55%, 100% 80%, 97% 100%, 2% 96%, 0 70%, 4% 45%, 0 18%);
+  transform: rotate(-5deg); pointer-events: none; transition: transform .18s;
+}
+[data-style="riso"] .book.reading:nth-child(even)::before { transform: rotate(4deg); background: repeating-linear-gradient(-45deg, color-mix(in srgb, var(--pink) 70%, transparent) 0 6px, color-mix(in srgb, var(--pink) 50%, transparent) 6px 12px); }
+[data-style="riso"] .book.reading:hover::before { transform: translate(-3px, -5px) rotate(-7deg); }
+/* finished books get a library stamp */
+[data-style="riso"] .badge.done { display: none; }
+[data-style="riso"] .book.finished .cover::after {
+  content: "READ"; position: absolute; right: 8%; bottom: 16%; z-index: 2; transform: rotate(-14deg);
+  font-family: var(--stampf); font-size: calc(var(--cover-w, 148px) / 9); letter-spacing: .12em; color: #e8167f;
+  padding: 3px 9px 1px; border: 3px solid currentColor; border-radius: 4px; background: rgba(255, 250, 240, .82); box-shadow: 0 0 0 1.5px rgba(255, 250, 240, .82);
+  -webkit-mask: url("../img/riso/grunge.png") center / 160px;
+}
+[data-style="riso"] .badge { border-radius: 1px; font-family: var(--type); }
+[data-style="riso"] .badge.fmt { background: var(--yellow); color: #1d1b3a; backdrop-filter: none; }
+[data-style="riso"] .badge.fav { background: var(--pink); color: #1d1b3a; }
+[data-style="riso"] .cover .bar { height: 5px; background: rgba(29, 27, 58, .55); }
+[data-style="riso"] .cover .bar i { background: var(--yellow); }
+[data-style="riso"] .book .meta { padding-top: 11px; }
+[data-style="riso"] .t { font-family: var(--display); font-weight: 700; font-size: .98em; font-variation-settings: "SOFT" 100, "WONK" 1; }
+[data-style="riso"] .a { font-family: var(--type); color: var(--text2); font-size: .8em; }
+
+/* covers made by Iqra when a book has none: a two-ink riso print */
+[data-style="riso"] .gen-cover {
+  color: #1d1b3a; padding: 13% 11%;
+  background:
+    radial-gradient(circle at calc(20% + var(--h) * .18%) calc(62% + var(--h) * .06%), color-mix(in srgb, #ff48b0 92%, transparent) 0 26%, transparent 26.5%),
+    linear-gradient(calc(var(--h) * 1deg), transparent 0 46%, color-mix(in srgb, #3255a4 88%, transparent) 46% 64%, transparent 64%),
+    radial-gradient(circle at center, rgba(29, 27, 58, .2) .8px, transparent 1.3px) 0 0 / 5px 5px,
+    #f7f0df;
+  background-blend-mode: multiply, multiply, normal, normal;
+}
+[data-style="riso"] .gen-cover::before { inset: 4%; border: 1.5px solid #1d1b3a; border-radius: 1px; }
+[data-style="riso"] .gen-cover .gt { font-family: "Fraunces", Georgia, serif; font-weight: 900; font-style: italic; font-variation-settings: "SOFT" 100, "WONK" 1; font-size: calc(var(--cover-w, 148px) / 9.5); line-height: 1.02; position: relative; }
+[data-style="riso"] .gen-cover .ga { font-family: "Courier Prime", monospace; font-weight: 700; opacity: 1; position: relative; background: #f7f0df; align-self: flex-start; padding: 0 3px; }
+[data-style="riso"] .gen-cover .gf { font-family: "Courier Prime", monospace; opacity: .8; position: relative; }
+
+/* lists and facet stacks */
+[data-style="riso"] .brow { border-radius: 0; border-bottom: 1.5px dotted color-mix(in srgb, var(--ink) 30%, transparent); }
+[data-style="riso"] .brow:hover { background: color-mix(in srgb, var(--yellow) 40%, transparent); }
+[data-style="riso"] .brow.head { font-family: var(--stampf); background: var(--bg) var(--paper); background-size: 512px; }
+[data-style="riso"] .brow .cover { box-shadow: 2px 2px 0 var(--blue); }
+[data-style="riso"] .facet { border-radius: 2px; }
+[data-style="riso"] .facet:hover { background: color-mix(in srgb, var(--yellow) 45%, transparent); }
+[data-style="riso"] .fname { font-family: var(--display); font-weight: 800; font-size: 1.05em; }
+[data-style="riso"] .fcount { font-family: var(--type); }
+[data-style="riso"] .stack .cover { box-shadow: 3px 3px 0 var(--ink); }
+[data-style="riso"] .crumb { font-family: var(--type); }
+[data-style="riso"] .empty h3 { font-size: 1.8em; font-style: italic; }
+
+/* ---------- overlays ---------- */
+[data-style="riso"] :is(.menu, .modal) { border-radius: 3px; border: 1.5px solid var(--ink); background: var(--card); box-shadow: 6px 6px 0 var(--blue); }
+[data-style="riso"] .menu button { border-radius: 0; }
+[data-style="riso"] .menu button:hover { background: var(--yellow); color: #1d1b3a; }
+[data-style="riso"] .menu hr { border-top: 1.5px dotted var(--ink); }
+[data-style="riso"] .modal-back { background: color-mix(in srgb, var(--blue) 40%, rgba(10, 8, 30, .4)); backdrop-filter: none; }
+[data-style="riso"] .modal > header h2 { font-size: 1.5em; font-style: italic; font-weight: 900; }
+[data-style="riso"] .modal > footer { border-top: 1.5px dashed var(--ink); }
+[data-style="riso"] .big-cover .cover, [data-style="riso"] .big-cover > img, [data-style="riso"] .big-cover > .gen-cover { border-radius: 2px; box-shadow: 8px 8px 0 var(--pink); }
+[data-style="riso"] .facts dt { font-family: var(--stampf); }
+[data-style="riso"] .toast {
+  border-radius: 0; background: var(--yellow); color: #1d1b3a; border: 1.5px solid #1d1b3a; box-shadow: 4px 4px 0 var(--pink);
+  font-family: var(--type); font-weight: 700;
+  clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%, 0 70%, 6px 60%, 0 50%, 6px 40%, 0 30%);
+  padding-left: 22px;
+}
+
+/* ---------- stats & settings ---------- */
+[data-style="riso"] .stat {
+  border-radius: 2px; border: 1.5px solid var(--ink); background: var(--card); box-shadow: 4px 4px 0 var(--blue); position: relative;
+}
+[data-style="riso"] .stat:nth-child(odd) { transform: rotate(-.8deg); } [data-style="riso"] .stat:nth-child(even) { transform: rotate(.7deg); box-shadow: 4px 4px 0 var(--pink); }
+[data-style="riso"] .stat::before {
+  content: ""; position: absolute; top: -8px; left: 50%; width: 46px; height: 16px; margin-left: -23px; transform: rotate(-3deg);
+  background: color-mix(in srgb, var(--yellow) 70%, transparent); clip-path: polygon(3% 0, 97% 5%, 100% 50%, 97% 100%, 2% 96%, 0 50%);
+}
+[data-style="riso"] .stat b { font-family: var(--display); font-weight: 900; color: var(--blue); font-size: 2em; }
+[data-style="riso"] .stat span { font-family: var(--type); }
+[data-style="riso"] .stat .icon { color: var(--pink); }
+[data-style="riso"] .panel {
+  border-radius: 2px; border: 1.5px solid var(--ink); box-shadow: 5px 5px 0 color-mix(in srgb, var(--ink) 85%, transparent);
+  background: repeating-linear-gradient(180deg, transparent 0 27px, var(--rule) 27px 28px), var(--card);
+}
+[data-style="riso"] .panel h2 { font-size: 1.35em; font-style: italic; font-weight: 800; }
+[data-style="riso"] .barcol i { border-radius: 0; background: var(--halftone-blue), color-mix(in srgb, var(--blue) 25%, var(--card)); border: 1.5px solid var(--ink); border-bottom: 0; }
+[data-style="riso"] .barcol i.met { background: var(--halftone), color-mix(in srgb, var(--pink) 35%, var(--card)); }
+[data-style="riso"] .barcol small, [data-style="riso"] .legend { font-family: var(--type); }
+[data-style="riso"] .heat i, [data-style="riso"] .legend i { border-radius: 1px; }
+[data-style="riso"] i.l1 { background: color-mix(in srgb, var(--pink) 25%, var(--card)); } [data-style="riso"] i.l2 { background: color-mix(in srgb, var(--pink) 50%, var(--card)); }
+[data-style="riso"] i.l3 { background: color-mix(in srgb, var(--pink) 78%, var(--card)); } [data-style="riso"] i.l4 { background: var(--pink); box-shadow: inset 0 0 0 1px #1d1b3a; }
+[data-style="riso"] .track { border-radius: 0; } [data-style="riso"] .track i { border-radius: 0; background: var(--blue); }
+[data-style="riso"] .settings-page h3 { font-size: 1.3em; font-style: italic; font-weight: 800; color: var(--blue); }
+[data-style="riso"] .folder { border-radius: 2px; border: 1.5px solid var(--ink); background: var(--card); font-family: var(--type); }
+[data-style="riso"] .theme-swatch { border-radius: 2px; border: 1.5px solid var(--ink); }
+[data-style="riso"] .theme-swatch.on, [data-style="riso"] .theme-swatch.auto { border-color: var(--ink); box-shadow: 3px 3px 0 var(--pink); }
+[data-style="riso"] .seg.tabs.big button { font-family: var(--stampf); letter-spacing: .06em; }
+
+/* drag-and-drop target */
+[data-style="riso"] body.dragging #main::after { border: 3px dashed var(--ink); border-radius: 3px; background: color-mix(in srgb, var(--yellow) 70%, var(--bg)); font-family: var(--display); font-style: italic; font-weight: 900; font-size: 2em; color: var(--blue); }
+[data-style="riso"][data-mode="dark"] .brand::before { filter: brightness(1.7) saturate(1.1); }
+
+/* inside the reader the book's own theme leads; riso only lends its shapes */
+[data-style="riso"] #reader.rd { --card: var(--surface); --ink: var(--text); --rule: transparent; --blue: color-mix(in srgb, var(--rd-fg) 55%, var(--rd-bg)); --pink: var(--accent); }
+[data-style="riso"] #reader.rd .btn.primary { color: var(--rd-bg); }
