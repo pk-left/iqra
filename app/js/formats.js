@@ -112,12 +112,27 @@ function splitHtmlByHeadings(html, title) {
 }
 
 // A reflowable book made from plain HTML chapters (used for txt, md, html, docx, odt, rtf, doc)
+// Right-to-left scripts (Arabic, Hebrew, Syriac, Thaana, N'Ko): if most letters in the text are in one of
+// these, the book is laid out and paged right to left
+export const RTL_LANGS = new Set(['ar', 'fa', 'ur', 'he', 'iw', 'ps', 'sd', 'ug', 'yi', 'ckb', 'dv', 'syr', 'arc', 'ks', 'ku'])
+export function detectScript(text) {
+    const sample = String(text ?? '').slice(0, 30000)
+    const rtl = (sample.match(/[\u0590-\u08FF\uFB1D-\uFDFF\uFE70-\uFEFF]/g) ?? []).length
+    const ltr = (sample.match(/[A-Za-z\u00C0-\u024F\u0370-\u03FF\u0400-\u04FF]/g) ?? []).length
+    if (rtl > 40 && rtl > ltr) return (sample.match(/[\u0590-\u05FF]/g) ?? []).length > rtl / 2 ? 'he' : 'ar'
+    return null
+}
 function makeHtmlBook({ title, author, language, chapters, css = '' }) {
     const urls = []
-    const docs = chapters.map(c => `<!DOCTYPE html><html lang="${esc(language || '')}"><head><meta charset="utf-8"><title>${esc(c.title || title)}</title><style>
+    if (!language) {
+        const plain = chapters.slice(0, 3).map(c => c.html.replace(/<[^>]+>/g, ' ')).join(' ')
+        language = detectScript(plain) ?? ''
+    }
+    const dir = RTL_LANGS.has(String(language).split('-')[0].toLowerCase()) ? 'rtl' : ''
+    const docs = chapters.map(c => `<!DOCTYPE html><html lang="${esc(language || '')}"${dir ? ' dir="rtl"' : ''}><head><meta charset="utf-8"><title>${esc(c.title || title)}</title><style>
 body{overflow-wrap:break-word} img{max-width:100%;height:auto} table{border-collapse:collapse;max-width:100%} td,th{border:1px solid color-mix(in srgb,currentColor 25%,transparent);padding:.3em .6em}
 pre{white-space:pre-wrap} blockquote{margin-inline:1.2em;opacity:.9} ${css}</style></head><body>${c.html}</body></html>`)
-    const book = { metadata: { title, author, language }, rendition: {} }
+    const book = { metadata: { title, author, language }, rendition: {}, dir: dir || undefined }
     book.sections = docs.map((str, i) => ({
         id: i, linear: 'yes', size: str.length,
         load: () => (urls[i] ??= URL.createObjectURL(new Blob([str], { type: 'text/html' }))),
@@ -159,6 +174,7 @@ function makeImageBook({ title, count, getPage, labels, getCover, onDestroy }) {
     book.getTOCFragment = doc => doc.documentElement
     book.isExternal = uri => /^(?!blob:)\w+:/i.test(uri)
     book.getCover = getCover ?? (() => getPage(0))
+    book.getPageBlob = getPage // used by the comic scroll mode
     book.destroy = () => { for (const arr of cache.values()) arr.forEach(u => URL.revokeObjectURL(u)); onDestroy?.() }
     return book
 }

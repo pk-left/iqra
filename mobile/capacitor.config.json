@@ -1,0 +1,11 @@
+{
+  "appId": "com.pkleft.iqra",
+  "appName": "Iqra",
+  "webDir": "www",
+  "android": {
+    "backgroundColor": "#15171c"
+  },
+  "plugins": {
+    "CapacitorHttp": { "enabled": false }
+  }
+}

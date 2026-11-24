@@ -251,7 +251,10 @@ export class View extends HTMLElement {
         }
 
         this.isFixedLayout = this.book.rendition?.layout === 'pre-paginated'
-        if (this.isFixedLayout) {
+        // Iqra: a book can name its own renderer element (comic scroll mode)
+        if (this.book.rendition?.renderer) {
+            this.renderer = document.createElement(this.book.rendition.renderer)
+        } else if (this.isFixedLayout) {
             await import('./fixed-layout.js')
             this.renderer = document.createElement('foliate-fxl')
         } else {

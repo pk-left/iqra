@@ -1,3 +1,8 @@
+/* Iqra: polyfill for Map/WeakMap.getOrInsert(Computed), used by pdf.js 5.5 but missing in Electron 40's Chromium */
+for (const C of [Map, WeakMap]) {
+  if (!C.prototype.getOrInsert) Object.defineProperty(C.prototype, "getOrInsert", { configurable: true, writable: true, value(k, v) { if (this.has(k)) return this.get(k); this.set(k, v); return v; } });
+  if (!C.prototype.getOrInsertComputed) Object.defineProperty(C.prototype, "getOrInsertComputed", { configurable: true, writable: true, value(k, fn) { if (this.has(k)) return this.get(k); const v = fn(k); this.set(k, v); return v; } });
+}
 /**
  * @licstart The following is the entire license notice for the
  * JavaScript code in this page

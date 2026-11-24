@@ -3,7 +3,7 @@ const { contextBridge, ipcRenderer, webUtils } = require('electron')
 const CHANNELS = new Set(['db:get', 'db:patch', 'db:replace', 'db:flush', 'app:info', 'scan', 'stat', 'exists:many',
     'walk:any', 'cover:save', 'cover:delete', 'dialog:open', 'dialog:save', 'file:readText', 'shell:show', 'shell:open',
     'net:fetch', 'download', 'archive:extract', 'doc:text', 'cache:clear', 'win:new', 'win:fullscreen', 'win:onTop',
-    'win:overlay', 'win:title', 'win:close', 'test:done', 'test:shot'])
+    'win:overlay', 'win:title', 'win:close', 'test:done', 'test:shot', 'dict:lookup'])
 const EVENTS = new Set(['db:patched', 'db:replaced', 'open-files', 'fullscreen'])
 
 contextBridge.exposeInMainWorld('api', {

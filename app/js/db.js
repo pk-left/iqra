@@ -1,7 +1,7 @@
 // Renderer-side view of the data stores owned by the main process.
 // Mutations are applied locally at once and sent to main as patches.
 const api = window.api
-export const data = { library: {}, settings: {}, annotations: {}, stats: {} }
+export const data = { library: {}, settings: {}, annotations: {}, stats: {}, study: {} }
 const listeners = new Set()
 const queues = {}
 let flushTimer

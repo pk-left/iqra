@@ -7,7 +7,10 @@ import { FootnoteHandler } from '../vendor/foliate-js/footnotes.js'
 import { h, $, $$, icon, iconBtn, menuAt, modal, toast, promptBox, debounce, clamp, uid, fmtDuration, fmtDate, esc, toggle, row } from './ui.js'
 import { data, db } from './db.js'
 import { lib } from './store.js'
-import { openBook, FIXED } from './formats.js'
+import { openBook, FIXED, COMIC, RTL_LANGS } from './formats.js'
+import './webtoon.js'
+import { saveWord, addToReview, quoteCard } from './study.js'
+import { focus } from './focus.js'
 import { S, resolveReaderTheme, readerControls, HIGHLIGHTS, BUNDLED_FONTS, LANGS, KEY_ACTIONS, isDark, setOverlay, applyAppTheme } from './settings.js'
 import { tracker, pace } from './stats.js'
 
@@ -34,13 +37,19 @@ function fontFaces(family) {
     return [[400, 'normal'], [400, 'italic'], [700, 'normal'], [700, 'italic']].map(([w, s]) =>
         `@font-face{font-family:"${family}";font-weight:${w};font-style:${s};font-display:swap;src:url("app://iqra/fonts/${slug}-latin-${w}-${s}.woff2") format("woff2")}`).join('\n')
 }
+const AMIRI = [[400, 'normal'], [400, 'italic'], [700, 'normal'], [700, 'italic']].map(([w, s]) =>
+    `@font-face{font-family:"Amiri";font-weight:${w};font-style:${s};font-display:swap;src:url("app://iqra/fonts/amiri-arabic-${w}-${s}.woff2") format("woff2");unicode-range:U+0600-06FF,U+0750-077F,U+0870-08FF,U+FB50-FDFF,U+FE70-FEFF,U+200C-200E,U+0660-0669}`).join('\n')
 function getCSS(r, theme) {
     const generic = BUNDLED_FONTS.find(f => f[0] === r.font)?.[2] ?? 'serif'
-    const family = `"${r.font}", ${generic}`
+    // Arabic-script text falls back to Amiri (a classic naskh face) whatever the chosen font
+    const family = `"${r.font}", "Amiri", ${generic}`
     const imp = r.overrideColors ? ' !important' : ''
     return `
 @namespace epub "http://www.idpf.org/2007/ops";
 ${fontFaces(r.font)}
+${AMIRI}
+:root:lang(ar), :root:lang(fa), :root:lang(ur) { --ar: 1; }
+:root[dir="rtl"] p, :root[dir="rtl"] li { text-align-last: auto; }
 html { color-scheme: ${theme.dark ? 'dark' : 'light'}; color: ${theme.fg}${imp}; background: ${theme.bg}${imp}; font-size: ${r.fontSize}px !important; }
 body { font-family: ${family} !important; font-weight: ${r.weight}; letter-spacing: ${r.letterSpacing}em; word-spacing: ${r.wordSpacing}em; ${r.overrideColors ? `color: ${theme.fg} !important; background: transparent !important;` : ''} }
 ${r.overrideFonts ? `body *:not(pre):not(code):not(kbd):not(samp):not(tt) { font-family: ${family} !important; }` : ''}
@@ -74,7 +83,8 @@ class Reader {
     get rec() { return lib.get(this.id) }
     get r() { return this.perBook ? S.readerFor(this.id) : S.reader }
     get ann() { return data.annotations[this.id] ?? {} }
-    get scrolled() { return !this.fixed && this.r.flow === 'scrolled' }
+    get scrolled() { return this.webtoon || (!this.fixed && this.r.flow === 'scrolled') }
+    get isComic() { return COMIC.has(this.rec?.format) && !!this.book?.getPageBlob }
 
     // ---------- DOM ----------
     build() {
@@ -91,6 +101,7 @@ class Reader {
             this.bmBtn,
             iconBtn('volume-2', 'Read aloud (R)', () => this.tts.toggle()),
             iconBtn('zap', 'Speed reading (Ctrl+R)', () => this.speedRead()),
+            iconBtn('timer', 'Focus session and sounds (P)', e => focus.panel(e.currentTarget, this.root)),
             iconBtn('type', 'Reading settings (S)', () => this.toggleSettings()),
             iconBtn('maximize', 'Full screen (F11)', () => api.invoke('win:fullscreen')),
             iconBtn('ellipsis', 'More', e => this.moreMenu(e.currentTarget)))
@@ -135,12 +146,26 @@ class Reader {
         if (current !== this) return this.book.destroy?.()
         const book = this.book
         this.fixed = book.rendition?.layout === 'pre-paginated'
+        this.isPdf = rec.format === 'pdf'
+        // comics can be read as one long vertical strip (rec.comicView set per book, else the default)
+        this.webtoon = this.fixed && this.isComic && (rec.comicView ? rec.comicView === 'scroll' : !!this.r.comicScroll)
+        if (this.webtoon) book.rendition = { ...book.rendition, renderer: 'iqra-webtoon' }
+        this.root.classList.toggle('webtoon', !!this.webtoon)
+        // page direction: the book's own, or right to left for Arabic, Persian, Urdu and Hebrew books, or the reader's choice
+        const lang0 = String((Array.isArray(book.metadata?.language) ? book.metadata.language[0] : book.metadata?.language) || rec.language || '').split('-')[0].toLowerCase()
+        const want = rec.dir ?? 'auto'
+        if (want === 'rtl') book.dir = 'rtl'
+        else if (want === 'ltr') book.dir = 'ltr'
+        else if (!book.dir && RTL_LANGS.has(lang0)) book.dir = 'rtl'
+        this.rtl = book.dir === 'rtl'
+        this.root.classList.toggle('rtl', this.rtl)
         this.root.classList.toggle('fixed', this.fixed)
         if (this.fixed && this.r.pdfSpread === 'none') book.rendition.spread = 'none'
         const view = this.view = document.createElement('foliate-view')
         view.setAttribute('autohide-cursor', '')
         this.stage.prepend(view)
         try { await view.open(book) } catch (e) { console.error(e); return this.showError(e) }
+        if (!this.fixed && (want !== 'auto' || this.rtl)) view.language = { ...view.language, isCJK: false, direction: this.rtl ? 'rtl' : 'ltr' }
         view.addEventListener('load', e => this.onLoad(e.detail))
         view.addEventListener('relocate', e => this.onRelocate(e.detail))
         view.addEventListener('external-link', e => { e.preventDefault(); api.invoke('shell:open', e.detail.href_ ?? e.detail.a?.href) })
@@ -167,6 +192,11 @@ class Reader {
         try {
             await view.init({ lastLocation: rec.location || null })
         } catch (e) { console.warn('could not restore position', e); await view.renderer.next?.() }
+        if (this.webtoon) {
+            const rn = view.renderer
+            if (rec.location && rec.comicOffset) await rn.goTo({ index: rn.index, offset: rec.comicOffset })
+            rn.addEventListener('click', () => { if (this.popups.childElementCount) this.hidePopups(); else this.toggleBars() })
+        }
         this.loading.remove()
         tracker.start(this.id)
         const meta = book.metadata ?? {}
@@ -199,7 +229,12 @@ class Reader {
         root.style.setProperty('--rd-bg', theme.bg); root.style.setProperty('--rd-fg', theme.fg); root.style.setProperty('--rd-link', theme.link)
         root.dataset.dark = theme.dark ? '1' : ''
         setOverlay(theme.bg, !!theme.dark)
-        if (this.fixed) {
+        if (this.webtoon) {
+            rn.setAttribute('max-width', String(r.comicWidth ?? 900))
+            rn.setAttribute('gap', String(r.comicGap ?? 0))
+            view.style.filter = r.pdfTheme && theme.dark ? 'invert(0.9) hue-rotate(180deg)' : ''
+            this.stage.style.background = r.pdfTheme ? theme.bg : (theme.dark ? '#1e1f22' : '#e9e7e2')
+        } else if (this.fixed) {
             rn.setAttribute('zoom', r.pdfZoom)
             view.style.filter = r.pdfTheme && theme.dark ? 'invert(0.9) hue-rotate(180deg)' : ''
             this.stage.style.background = r.pdfTheme ? theme.bg : (theme.dark ? '#1e1f22' : '#e9e7e2')
@@ -227,6 +262,12 @@ class Reader {
         this.applySettings()
         if (k === 'pdfSpread') toast('Reopen the book to change the page spread')
     }
+    setComicMode(mode) {
+        if ((mode === 'scroll') === !!this.webtoon) return
+        this.#save()
+        lib.update(this.id, { comicView: mode })
+        openReader(this.id, this.onClose)
+    }
     toggleSettings(force) {
         const show = force ?? this.settingsEl.hidden
         this.settingsEl.hidden = !show
@@ -239,8 +280,8 @@ class Reader {
                 else db.set('settings', ['perBook', this.id], { ...S.reader })
                 this.applySettings(); draw()
             }), this.perBook ? 'Changes below stay with this book' : 'Changes below apply to every book'),
-            readerControls(() => this.r, (k, v) => this.setSetting(k, v), { fixed: this.fixed, tab: this.settingsTab ?? (this.fixed ? 'layout' : 'text'), onTab: t => this.settingsTab = t }),
-            this.fixed ? row('Two pages side by side', toggle(this.r.pdfSpread !== 'none', v => this.setSetting('pdfSpread', v ? 'auto' : 'none')), 'When the window is wide') : '')
+            readerControls(() => this.r, (k, v) => this.setSetting(k, v), { fixed: this.fixed, comic: this.isComic, webtoon: this.webtoon, onComicMode: m => this.setComicMode(m), tab: this.settingsTab ?? (this.fixed ? 'layout' : 'text'), onTab: t => this.settingsTab = t }),
+            this.fixed && !this.webtoon ? row('Two pages side by side', toggle(this.r.pdfSpread !== 'none', v => this.setSetting('pdfSpread', v ? 'auto' : 'none')), 'When the window is wide') : '')
         draw()
     }
 
@@ -254,6 +295,75 @@ class Reader {
         doc.addEventListener('wheel', e => this.onWheel(e), { passive: false })
         doc.addEventListener('mousemove', e => { const p = this.toScreen(doc, e.clientX, e.clientY); this.onMouse(p.x, p.y); this.edgeReveal(p.y) })
         doc.addEventListener('dblclick', e => { if (e.target.closest?.('img, svg')) this.zoomImage(e.target.closest('img, svg')) })
+        if (this.isPdf) this.paintPdf(doc, index)
+    }
+
+    // ---------- PDF highlights: stored as rectangles in page fractions, drawn on a layer under the text ----------
+    pdfLayer(doc) {
+        let layer = doc.getElementById('iqra-hl')
+        if (layer) return layer
+        const meta = doc.querySelector('meta[name="viewport"]')?.content ?? ''
+        const W = parseFloat(meta.match(/width=([\d.]+)/)?.[1]) || 600, H = parseFloat(meta.match(/height=([\d.]+)/)?.[1]) || 800
+        const st = doc.createElement('style')
+        st.textContent = `#iqra-hl{position:absolute;left:0;top:0;width:calc(var(--scale-factor,1) * ${W}px);height:calc(var(--scale-factor,1) * ${H}px);pointer-events:none}
+#iqra-hl i{position:absolute;display:block;border-radius:2px}
+#iqra-hl i.highlight{background:var(--c);mix-blend-mode:multiply;opacity:.45}
+#iqra-hl i.underline{border-bottom:2px solid var(--c)}
+#iqra-hl i.squiggly{border-bottom:2px dotted var(--c)}
+#iqra-hl i.strikethrough{background:linear-gradient(transparent 46%,var(--c) 46%,var(--c) 56%,transparent 56%)}
+#iqra-hl i.flash{outline:3px solid var(--c);outline-offset:2px}`
+        layer = doc.createElement('div')
+        layer.id = 'iqra-hl'
+        doc.head.append(st)
+        const canvas = doc.getElementById('canvas')
+        canvas ? canvas.after(layer) : doc.body.prepend(layer)
+        return layer
+    }
+    paintPdf(doc, index) {
+        if (!doc?.body) return
+        const list = Object.values(this.ann.highlights ?? {}).filter(a => a.pdf && a.index === index)
+        const layer = this.pdfLayer(doc)
+        layer.replaceChildren(...list.flatMap(a => a.rects.map(([x, y, w, hh]) => {
+            const i = doc.createElement('i')
+            i.className = a.style || 'highlight'
+            i.dataset.id = a.id
+            Object.assign(i.style, { left: x * 100 + '%', top: y * 100 + '%', width: w * 100 + '%', height: hh * 100 + '%' })
+            i.style.setProperty('--c', HIGHLIGHTS[a.color] ?? a.color ?? HIGHLIGHTS.yellow)
+            return i
+        })))
+    }
+    repaintPdf(index) {
+        for (const [doc, i] of this.docs) if (i === index && doc.defaultView) this.paintPdf(doc, i)
+    }
+    pdfRects(range) {
+        const doc = range.startContainer.ownerDocument
+        const L = this.pdfLayer(doc).getBoundingClientRect()
+        const raw = Array.from(range.getClientRects()).filter(r => r.width > 1 && r.height > 1)
+        // merge the many small span boxes into one box per line
+        const lines = []
+        for (const r of raw.sort((a, b) => a.top - b.top || a.left - b.left)) {
+            const ln = lines.find(l => Math.abs(l.top - r.top) < r.height * 0.5 && Math.abs(l.bottom - r.bottom) < r.height * 0.6)
+            if (ln) { ln.left = Math.min(ln.left, r.left); ln.right = Math.max(ln.right, r.right); ln.top = Math.min(ln.top, r.top); ln.bottom = Math.max(ln.bottom, r.bottom) }
+            else lines.push({ left: r.left, right: r.right, top: r.top, bottom: r.bottom })
+        }
+        const f = n => Math.round(n * 10000) / 10000
+        return lines.map(l => [f((l.left - L.left) / L.width), f((l.top - L.top) / L.height), f((l.right - l.left) / L.width), f((l.bottom - l.top) / L.height)])
+    }
+    pdfHit(doc, e) {
+        const layer = doc.getElementById('iqra-hl')
+        if (!layer) return null
+        const L = layer.getBoundingClientRect()
+        const x = (e.clientX - L.left) / L.width, y = (e.clientY - L.top) / L.height
+        const index = this.docs.get(doc)
+        return Object.values(this.ann.highlights ?? {}).find(a => a.pdf && a.index === index && a.rects.some(([rx, ry, rw, rh]) => x >= rx && x <= rx + rw && y >= ry - 0.004 && y <= ry + rh + 0.004))
+    }
+    pdfScreenRect(doc, a) {
+        const L = this.pdfLayer(doc).getBoundingClientRect()
+        const xs = a.rects.map(r => r[0]), ys = a.rects.map(r => r[1])
+        const left = L.left + Math.min(...xs) * L.width, top = L.top + Math.min(...ys) * L.height
+        const right = L.left + Math.max(...a.rects.map(r => r[0] + r[2])) * L.width, bottom = L.top + Math.max(...a.rects.map(r => r[1] + r[3])) * L.height
+        const p1 = this.toScreen(doc, left, top), p2 = this.toScreen(doc, right, bottom)
+        return { left: p1.x, top: p1.y, right: p2.x, bottom: p2.y }
     }
     frameOf(doc) { return doc.defaultView?.frameElement }
     toScreen(doc, x, y) {
@@ -293,7 +403,11 @@ class Reader {
         const sel = doc.getSelection?.()
         if (sel && !sel.isCollapsed) return
         if (this.popups.childElementCount) return this.hidePopups()
-        const ov = this.view.renderer.getContents().find(c => c.doc === doc)?.overlayer
+        if (this.isPdf) {
+            const a = this.pdfHit(doc, e)
+            if (a) return this.showPdfAnnotation(doc, a)
+        }
+        const ov = this.view.renderer.getContents?.().find(c => c.doc === doc)?.overlayer
         try { if (ov?.hitTest(e)?.[0]) return } catch { /* no overlay */ }
         const p = this.toScreen(doc, e.clientX, e.clientY)
         const sr = this.stage.getBoundingClientRect()
@@ -326,11 +440,21 @@ class Reader {
         if ($('.modal-back')) return
         if (this.speed) return this.speed.key(e)
         const k = keyOf(e)
+        if (this.webtoon) {
+            const rn = this.view?.renderer
+            const step = { ArrowDown: 0.25, ArrowUp: -0.25, ' ': 0.85, 'Shift+ ': -0.85, PageDown: 0.85, PageUp: -0.85 }[k]
+            if (step && rn?.scrollStep) { e.preventDefault(); tracker.activity(); return rn.scrollStep(step) }
+            if (k === 'Home') { e.preventDefault(); return this.view.goTo(0) }
+            if (k === 'End') { e.preventDefault(); return rn?.goToEnd?.() }
+        }
         const keys = S.keys
         const action = Object.keys(keys).find(a => keys[a]?.includes(k))
         if (!action) return
-        if (this.scrolled && (k === ' ' || k === 'Shift+ ')) return
+        if (this.scrolled && !this.webtoon && (k === ' ' || k === 'Shift+ ')) return
         e.preventDefault()
+
+        // in right-to-left books the left arrow moves forward, like turning a page leftwards
+        if (this.rtl && !this.webtoon && /Arrow(Left|Right)$/.test(k) && (action === 'next' || action === 'prev')) return this.act(k.endsWith('Left') ? 'next' : 'prev')
         this.act(action)
     }
     act(action) {
@@ -355,7 +479,7 @@ class Reader {
             case 'tts': return this.tts.toggle()
             case 'fontUp': return this.fixed ? this.zoomBy(1.15) : this.setSetting('fontSize', clamp(this.r.fontSize + 1, 10, 40))
             case 'fontDown': return this.fixed ? this.zoomBy(1 / 1.15) : this.setSetting('fontSize', clamp(this.r.fontSize - 1, 10, 40))
-            case 'flow': return this.fixed ? null : this.setSetting('flow', this.r.flow === 'paginated' ? 'scrolled' : 'paginated')
+            case 'flow': return this.isComic ? this.setComicMode(this.webtoon ? 'pages' : 'scroll') : this.fixed ? null : this.setSetting('flow', this.r.flow === 'paginated' ? 'scrolled' : 'paginated')
             case 'theme': {
                 const list = S.themes, r = this.r
                 const key = r.followApp ? (isDark() ? 'darkTheme' : 'lightTheme') : 'theme'
@@ -368,9 +492,14 @@ class Reader {
             case 'speed': return this.speedRead()
             case 'ruler': return this.setSetting('ruler', !this.r.ruler)
             case 'bars': return this.toggleBars()
+            case 'focus': return focus.panel($('.rd-top [title^="Focus"]', this.root))
         }
     }
     zoomBy(f) {
+        if (this.webtoon) {
+            const cur = this.r.comicWidth || this.stage.clientWidth
+            return this.setSetting('comicWidth', clamp(Math.round(cur * f / 50) * 50, 300, 3000))
+        }
         const z = this.r.pdfZoom
         const cur = isNaN(parseFloat(z)) ? 1 : parseFloat(z)
         this.setSetting('pdfZoom', String(clamp(Math.round(cur * f * 100) / 100, 0.4, 5)))
@@ -409,6 +538,7 @@ class Reader {
         if (!d || !rec) return
         const fraction = this.fixed ? ((d.section?.current ?? 0) + 1) / Math.max(1, d.section?.total ?? 1) : (d.fraction ?? 0)
         const patch = { progress: fraction, location: d.cfi, lastReadAt: Date.now() }
+        if (this.webtoon) patch.comicOffset = this.view?.renderer?.offset ?? 0
         const atEnd = fraction >= 0.995
         if (atEnd && rec.status !== 'finished' && this.relocs > 1) {
             lib.update(this.id, patch)
@@ -465,16 +595,18 @@ class Reader {
         on?.scrollIntoView({ block: 'nearest' })
     }
     sortedHighlights() {
-        return Object.values(this.ann.highlights ?? {}).sort((a, b) => (a.index ?? 0) - (b.index ?? 0) || (() => { try { return CFI.compare(a.value, b.value) } catch { return 0 } })())
+        return Object.values(this.ann.highlights ?? {}).sort((a, b) => (a.index ?? 0) - (b.index ?? 0) || (a.pdf ? (a.rects?.[0]?.[1] ?? 0) - (b.rects?.[0]?.[1] ?? 0) : (() => { try { return CFI.compare(a.value, b.value) } catch { return 0 } })()))
     }
     renderNotes(body) {
         const list = this.sortedHighlights()
-        if (this.fixed) body.append(h('p.muted.small', 'Highlighting works in reflowable books (EPUB, MOBI, FB2, TXT, DOCX). In PDFs and comics you can still select text to copy, define or translate it, and add bookmarks.'))
+        if (this.fixed && !this.isPdf) body.append(h('p.muted.small', 'These pages are pictures, so there is no text to highlight. You can still add bookmarks.'))
         if (!list.length) return body.append(h('p.muted', 'Select text in the book and pick a color to highlight it. Your highlights and notes collect here.'))
-        body.append(h('div.side-actions', h('button.btn.small', { onclick: () => this.exportNotes() }, icon('download', 14), ' Export')))
-        for (const a of list) body.append(h('div.note', { style: { '--c': HIGHLIGHTS[a.color] ?? a.color }, onclick: () => this.view.goTo(a.value) },
-            a.chapter ? h('small', a.chapter) : null, h('q', a.text?.slice(0, 400)), a.note ? h('p', a.note) : null,
-            h('div.note-actions', iconBtn('pencil', 'Edit note', e => { e.stopPropagation(); this.editNote(a.id) }), iconBtn('trash-2', 'Delete', e => { e.stopPropagation(); this.deleteHighlight(a.id) }))))
+        body.append(h('div.side-actions', h('button.btn.small', { onclick: () => this.exportNotes() }, icon('download', 14), ' Export'),
+            h('button.btn.small', { title: 'Turn every highlight in this book into a review card', onclick: () => { const n = list.filter(a => addToReview(this.id, a.id, true)).length; toast(n ? `${n} new review card${n === 1 ? '' : 's'}` : 'All highlights are already review cards') } }, icon('layers', 14), ' Review all')))
+        for (const a of list) body.append(h('div.note', { style: { '--c': HIGHLIGHTS[a.color] ?? a.color }, onclick: () => this.goToHighlight(a) },
+            a.chapter || a.pdf ? h('small', [a.pdf ? `Page ${a.index + 1}` : '', a.chapter].filter(Boolean).join(' · ')) : null, h('q', a.text?.slice(0, 400)), a.note ? h('p', a.note) : null,
+            h('div.note-actions', iconBtn('image', 'Make a quote card', e => { e.stopPropagation(); quoteCard(this.rec, a) }),
+                iconBtn('pencil', 'Edit note', e => { e.stopPropagation(); this.editNote(a.id) }), iconBtn('trash-2', 'Delete', e => { e.stopPropagation(); this.deleteHighlight(a.id) }))))
     }
     renderBookmarks(body) {
         const list = Object.values(this.ann.bookmarks ?? {}).sort((a, b) => (a.fraction ?? 0) - (b.fraction ?? 0))
@@ -560,12 +692,16 @@ class Reader {
     hidePopups() { this.popups.replaceChildren() }
     showSelection(range, index, text) {
         this.hidePopups()
+        this.lastRange = range
         const rect = this.rangeRect(range)
-        const canMark = !this.fixed
+        const canMark = !this.fixed || this.isPdf
         const mark = color => {
-            const a = { id: uid(), value: this.view.getCFI(index, range), color, style: this.r.highlightStyle, text: text.slice(0, 2000), note: '', created: Date.now(), index, chapter: this.loc?.tocItem?.label ?? '' }
+            const base = { id: uid(), color, style: this.r.highlightStyle, text: text.slice(0, 2000), note: '', created: Date.now(), index, chapter: this.loc?.tocItem?.label ?? '' }
+            const a = this.isPdf ? { ...base, pdf: true, rects: this.pdfRects(range) } : { ...base, value: this.view.getCFI(index, range) }
+            if (this.isPdf && !a.rects.length) { toast('Could not find that text on the page'); return a }
             db.set('annotations', [this.id, 'highlights', a.id], a)
             S.setReader('highlightColor', color)
+            if (this.isPdf) { this.repaintPdf(index); range.startContainer.ownerDocument.getSelection()?.removeAllRanges(); this.hidePopups(); if (!this.side.hidden) this.renderSide(); return a }
             this.view.addAnnotation(a)
             this.view.deselect(); this.hidePopups()
             if (!this.side.hidden) this.renderSide()
@@ -577,6 +713,7 @@ class Reader {
             canMark ? h('button.txt', { title: 'Highlight and add a note', onclick: () => { const a = mark(this.r.highlightColor); this.editNote(a.id) } }, icon('notebook-pen', 16), 'Note') : null,
             h('button.txt', { title: 'Copy', onclick: () => { navigator.clipboard.writeText(text); toast('Copied', { ms: 1000 }); this.hidePopups() } }, icon('copy', 16)),
             h('button.txt', { onclick: () => this.lookup(text, rect, 'define') }, icon('book', 16), 'Define'),
+            h('button.txt', { title: 'Make a quote card to share', onclick: () => { this.hidePopups(); quoteCard(this.rec, { text, chapter: this.loc?.tocItem?.label ?? '' }) } }, icon('image', 16)),
             h('button.txt', { onclick: () => this.lookup(text, rect, 'translate') }, icon('languages', 16), 'Translate'),
             h('button.txt', { title: 'Wikipedia', onclick: () => this.lookup(text, rect, 'wiki') }, icon('globe', 16)),
             h('button.txt', { title: 'Read aloud from here', onclick: () => { this.hidePopups(); this.tts.start(range) } }, icon('volume-2', 16)),
@@ -587,15 +724,33 @@ class Reader {
         const a = Object.values(this.ann.highlights ?? {}).find(x => x.value === value)
         if (!a) return
         this.hidePopups()
-        const set = (k, v) => { db.set('annotations', [this.id, 'highlights', a.id, k], v); this.view.addAnnotation({ ...a, [k]: v }); this.hidePopups(); if (!this.side.hidden) this.renderSide() }
-        const bar = h('div.sel-bar', { class: a.note ? 'with-note' : '' },
+        this.place(this.annotationBar(a), this.rangeRect(range))
+    }
+    showPdfAnnotation(doc, a) {
+        this.hidePopups()
+        this.place(this.annotationBar(a), this.pdfScreenRect(doc, a))
+    }
+    goToHighlight(a) {
+        if (!a.pdf) return this.view.goTo(a.value)
+        this.view.goTo(a.index)
+        setTimeout(() => { for (const [doc, i] of this.docs) if (i === a.index) doc.querySelectorAll?.(`#iqra-hl i[data-id="${a.id}"]`).forEach(el => { el.classList.add('flash'); setTimeout(() => el.classList.remove('flash'), 1400) }) }, 500)
+    }
+    annotationBar(a) {
+        const set = (k, v) => {
+            db.set('annotations', [this.id, 'highlights', a.id, k], v)
+            if (a.pdf) this.repaintPdf(a.index); else this.view.addAnnotation({ ...a, [k]: v })
+            this.hidePopups(); if (!this.side.hidden) this.renderSide()
+        }
+        const inReview = !!data.study.cards?.[`${this.id}:${a.id}`]
+        return h('div.sel-bar', { class: a.note ? 'with-note' : '' },
             a.note ? h('p.note-text', a.note) : null,
             h('div.sel-row',
                 Object.entries(HIGHLIGHTS).map(([name, c]) => h('button.dot', { class: a.color === name ? 'on' : '', style: { background: c }, onclick: () => set('color', name) })),
                 h('button.txt', { onclick: () => this.editNote(a.id) }, icon('notebook-pen', 16), a.note ? 'Edit note' : 'Add note'),
                 h('button.txt', { title: 'Copy', onclick: () => { navigator.clipboard.writeText(a.text); toast('Copied', { ms: 1000 }); this.hidePopups() } }, icon('copy', 16)),
+                h('button.txt', { title: inReview ? 'Already in your review deck' : 'Add to your review deck', disabled: inReview, onclick: () => { addToReview(this.id, a.id); toast('Added to Review'); this.hidePopups() } }, icon('layers', 16), inReview ? 'In review' : 'Review'),
+                h('button.txt', { title: 'Make a quote card', onclick: () => { this.hidePopups(); quoteCard(this.rec, a) } }, icon('image', 16)),
                 h('button.txt', { title: 'Delete highlight', onclick: () => this.deleteHighlight(a.id) }, icon('trash-2', 16))))
-        this.place(bar, this.rangeRect(range))
     }
     async editNote(id) {
         this.hidePopups()
@@ -609,8 +764,9 @@ class Reader {
     deleteHighlight(id) {
         const a = this.ann.highlights?.[id]
         if (!a) return
-        this.view.deleteAnnotation(a)
-        db.set('annotations', [this.id, 'highlights', id], null)
+        if (a.pdf) { db.set('annotations', [this.id, 'highlights', id], null); this.repaintPdf(a.index) }
+        else { this.view.deleteAnnotation(a); db.set('annotations', [this.id, 'highlights', id], null) }
+        db.set('study', ['cards', `${this.id}:${id}`], null)
         this.hidePopups()
         if (!this.side.hidden) this.renderSide()
     }
@@ -663,12 +819,35 @@ class Reader {
         const loaders = {
             define: async () => {
                 const word = text.split(/\s+/).slice(0, 3).join(' ').replace(/^[^\p{L}]+|[^\p{L}]+$/gu, '')
+                const saveBtn = (w, def, pos) => {
+                    const have = !!data.study.words?.[w.toLowerCase()]
+                    const b = h('button.btn.small', { class: have ? '' : 'primary', disabled: have, onclick: () => {
+                        saveWord({ word: w, def, pos, context: this.contextOf(text), bookId: this.id })
+                        b.disabled = true; b.replaceChildren(icon('check', 14), ' Saved'); b.classList.remove('primary')
+                    } }, icon(have ? 'check' : 'star', 14), have ? ' In your words' : ' Save word')
+                    return h('div.lk-actions', b)
+                }
+                // English words: the dictionary built into Iqra, so it works without internet
+                if (!/[^\x00-\x7F\u00C0-\u024F’'\s-]/.test(word)) {
+                    const off = await api.invoke('dict:lookup', word)
+                    if (off) {
+                        const byPos = new Map()
+                        for (const [pos, def, ex, syn] of off.senses) { if (!byPos.has(pos)) byPos.set(pos, []); byPos.get(pos).push({ def, ex, syn }) }
+                        const first = off.senses[0]
+                        body.replaceChildren(h('div.lk-word', h('b', off.word), off.word !== off.query ? h('span', `from “${off.query}”`) : h('span.offline', icon('wifi-off', 12), ' offline')),
+                            ...[...byPos].slice(0, 4).map(([pos, list]) => h('div.lk-meaning', h('i', pos), h('ol', list.slice(0, 3).map(df => h('li', df.def, df.ex ? h('small', ` “${df.ex}”`) : null))),
+                                list[0].syn?.length ? h('small', `Similar: ${[...new Set(list.flatMap(x => x.syn))].slice(0, 6).join(', ')}`) : null)),
+                            saveBtn(off.word, first[1], first[0]))
+                        return
+                    }
+                }
                 try {
                     const d = await get(`https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(word.toLowerCase())}`)
                     const e0 = d[0]
                     body.replaceChildren(h('div.lk-word', h('b', e0.word), h('span', e0.phonetic ?? e0.phonetics?.find(p => p.text)?.text ?? '')),
                         ...e0.meanings.slice(0, 4).map(m => h('div.lk-meaning', h('i', m.partOfSpeech), h('ol', m.definitions.slice(0, 3).map(df => h('li', df.definition, df.example ? h('small', ` “${df.example}”`) : null))),
-                            m.synonyms?.length ? h('small', `Similar: ${m.synonyms.slice(0, 6).join(', ')}`) : null)))
+                            m.synonyms?.length ? h('small', `Similar: ${m.synonyms.slice(0, 6).join(', ')}`) : null)),
+                        saveBtn(e0.word, e0.meanings[0]?.definitions[0]?.definition ?? '', e0.meanings[0]?.partOfSpeech ?? ''))
                 } catch (err) {
                     if (err.message === 'offline') return fail(err)
                     // other languages and rarer words: Wiktionary
@@ -677,7 +856,8 @@ class Reader {
                         const groups = Object.values(d).flat().slice(0, 4)
                         if (!groups.length) throw new Error('none')
                         const strip = s => new DOMParser().parseFromString(s ?? '', 'text/html').body.textContent.trim()
-                        body.replaceChildren(h('div.lk-word', h('b', word)), ...groups.map(g => h('div.lk-meaning', h('i', `${g.partOfSpeech}${g.language ? ' · ' + g.language : ''}`), h('ol', g.definitions.slice(0, 3).map(df => strip(df.definition)).filter(Boolean).map(t => h('li', t))))))
+                        body.replaceChildren(h('div.lk-word', h('b', word)), ...groups.map(g => h('div.lk-meaning', h('i', `${g.partOfSpeech}${g.language ? ' · ' + g.language : ''}`), h('ol', g.definitions.slice(0, 3).map(df => strip(df.definition)).filter(Boolean).map(t => h('li', t))))),
+                            saveBtn(word, strip(groups[0].definitions[0]?.definition), groups[0].partOfSpeech))
                     } catch (e2) { fail(e2) }
                 }
             },
@@ -717,6 +897,20 @@ class Reader {
         }
         this.place(card, rect, true)
         show(tab)
+    }
+    // the sentence around a selection, kept with saved words so they are remembered in context
+    contextOf(text) {
+        try {
+            const r = this.lastRange
+            const para = (r?.startContainer?.parentElement?.closest?.('p, li, div, span, blockquote') ?? r?.startContainer?.parentElement)?.textContent ?? ''
+            const flat = para.replace(/\s+/g, ' ')
+            const i = flat.indexOf(text.trim())
+            if (i < 0) return ''
+            const start = Math.max(flat.lastIndexOf('. ', i) + 1, flat.lastIndexOf('? ', i) + 1, flat.lastIndexOf('! ', i) + 1, 0)
+            let end = flat.slice(i + text.length).search(/[.?!](\s|$)/)
+            end = end < 0 ? flat.length : i + text.length + end + 1
+            return flat.slice(start, end).trim().slice(0, 300)
+        } catch { return '' }
     }
     showFootnote({ view, href }) {
         this.hidePopups()
@@ -911,7 +1105,8 @@ class Reader {
             { label: 'Open another book beside this one', icon: 'columns-2', run: () => api.invoke('win:new', '') },
             { label: 'Keep window on top', icon: 'pin', checked: this.onTop, run: () => { this.onTop = !this.onTop; api.invoke('win:onTop', this.onTop) } },
             { label: this.r.ruler ? 'Hide reading ruler' : 'Show reading ruler', icon: 'rows-3', run: () => this.setSetting('ruler', !this.r.ruler) },
-            { label: this.scrolled ? 'Switch to pages' : 'Switch to scrolling', icon: 'scroll-text', disabled: this.fixed, run: () => this.act('flow') },
+            { label: this.scrolled ? 'Switch to pages' : 'Switch to scrolling', icon: 'scroll-text', disabled: this.fixed && !this.isComic, run: () => this.act('flow') },
+            { label: `Page direction: ${{ auto: 'automatic', ltr: 'left to right', rtl: 'right to left' }[rec.dir ?? 'auto']}…`, icon: 'arrow-left-right', run: () => this.directionMenu(anchor) },
             '-',
             { label: 'Export highlights…', icon: 'download', run: () => this.exportNotes() },
             { label: 'Mark as finished', icon: 'circle-check', run: () => { lib.setStatus(this.id, 'finished'); toast('Marked as finished') } },
@@ -920,6 +1115,15 @@ class Reader {
         ])
     }
 
+    directionMenu(anchor) {
+        const setDir = d => { lib.update(this.id, { dir: d === 'auto' ? null : d }); openReader(this.id, this.onClose) }
+        const cur = this.rec.dir ?? 'auto'
+        menuAt(anchor, [
+            { label: `Automatic (${this.rtl ? 'right to left' : 'left to right'} for this book)`, icon: cur === 'auto' ? 'check' : null, run: () => setDir('auto') },
+            { label: 'Left to right', icon: cur === 'ltr' ? 'check' : null, run: () => setDir('ltr') },
+            { label: 'Right to left (Arabic, Urdu, Hebrew, manga)', icon: cur === 'rtl' ? 'check' : null, run: () => setDir('rtl') },
+        ])
+    }
     close() { this.onClose?.() }
     async destroy() {
         this.saveProgress.flush?.()

@@ -1,11 +1,27 @@
 // Settings page and the free-books page
+import { addWish, isWished } from './study.js'
 import { h, $, icon, iconBtn, toast, confirmBox, segmented, slider, toggle, row, select, debounce, fmtSize } from './ui.js'
 import { data, db } from './db.js'
 import { lib, importer, appInfo } from './store.js'
-import { S, PALETTES, ACCENTS, BUNDLED_FONTS, KEY_ACTIONS, DEFAULT_KEYS, readerControls, applyAppTheme, fontChoices } from './settings.js'
+import { updateMany } from './online.js'
+import { STYLES, S, PALETTES, ACCENTS, BUNDLED_FONTS, KEY_ACTIONS, DEFAULT_KEYS, readerControls, applyAppTheme, fontChoices } from './settings.js'
 
 const api = window.api
 let settingsTab = 'look'
+
+const STYLE_FONT = { riso: 'Fraunces', classic: 'Literata', library: 'IM Fell English', paperback: 'Josefin Sans', broadsheet: 'Playfair Display', bogolan: 'Bricolage Grotesque', indigo: 'DM Serif Display',
+    kente: 'Archivo Black', zellige: 'Reem Kufi', andalus: 'Marcellus', manuscript: 'Cinzel', rainy: 'Young Serif', train: 'Limelight', harmattan: 'Syne' }
+function styleGallery(current, pick) {
+    const groups = new Map()
+    for (const [id, st] of Object.entries(STYLES)) { if (!groups.has(st.group)) groups.set(st.group, []); groups.get(st.group).push([id, st]) }
+    return h('div.style-gallery', [...groups].map(([group, list]) => h('div.style-group', h('h4', group), h('div.style-row', list.map(([id, st]) => {
+        const day = st.day ?? {}
+        const [bg, fg, acc] = st.swatch ?? [day['--bg'], day['--text'], st.accent?.[0]]
+        return h('button.style-card', { class: id === current ? 'on' : '', dataset: { s: id }, title: st.desc, style: { background: bg, color: fg, '--scbg': bg }, onclick: () => pick(id) },
+            h('span.sc-art'), h('span.sc-check', icon('check', 14)), h('span.sc-dots', [acc, fg, st.night?.['--bg'] ?? bg].map(c => h('i', { style: { background: c } }))),
+            h('b.sc-name', { style: { fontFamily: `"${STYLE_FONT[id]}", serif`, textTransform: id === 'paperback' ? 'uppercase' : '' } }, st.name), h('small.sc-desc', st.desc))
+    })))))
+}
 
 export function renderSettings(el) {
     const a = S.app
@@ -14,15 +30,16 @@ export function renderSettings(el) {
     const redraw = () => renderSettings(el)
     const panes = {
         look: () => {
-            const fontSel = h('select', { onchange: () => set('uiFont', fontSel.value) }, BUNDLED_FONTS.map(([n]) => h('option', { value: n, selected: n === a.uiFont }, n)))
+            const fontSel = h('select', { onchange: () => set('uiFont', fontSel.value) }, BUNDLED_FONTS.map(([n]) => h('option', { value: n, selected: n === a.uiFont }, n === 'Inter' ? 'The style’s own font' : n)))
             fontChoices().then(list => fontSel.append(...list.filter(n => !BUNDLED_FONTS.some(f => f[0] === n)).map(n => h('option', { value: n, selected: n === a.uiFont }, n))))
             return [
-                row('Style', segmented([['riso', 'Riso print'], ['classic', 'Classic']], a.style, v => { set('style', v); redraw() }), a.style === 'riso' ? 'Two-ink print, library cards and stamps. Night print in dark mode.' : 'The original clean look, with your own colors'),
+                h('h3', 'Style'),
+                styleGallery(a.style, v => { set('style', v); redraw() }),
                 row('Mode', segmented([['system', 'Match Windows'], ['light', 'Light'], ['dark', 'Dark']], a.mode, v => set('mode', v))),
-                a.style === 'riso' ? null : row('Color mood', segmented(Object.entries(PALETTES).map(([id, p]) => [id, p.name]), a.palette, v => set('palette', v))),
-                a.style === 'riso' ? null : row('Accent color', h('div.swatches', ACCENTS.map(c => h('button', { class: c === a.accent ? 'on' : '', style: { background: c }, onclick: () => { set('accent', c); redraw() } })),
+                a.style !== 'classic' ? null : row('Color mood', segmented(Object.entries(PALETTES).map(([id, p]) => [id, p.name]), a.palette, v => set('palette', v))),
+                a.style !== 'classic' ? null : row('Accent color', h('div.swatches', ACCENTS.map(c => h('button', { class: c === a.accent ? 'on' : '', style: { background: c }, onclick: () => { set('accent', c); redraw() } })),
                     h('input', { type: 'color', value: a.accent, title: 'Any color', oninput: e => set('accent', e.target.value) }))),
-                a.style === 'riso' ? null : row('Pure black in dark mode', toggle(a.amoled, v => set('amoled', v)), 'Good for OLED screens'),
+                a.style !== 'classic' ? null : row('Pure black in dark mode', toggle(a.amoled, v => set('amoled', v)), 'Good for OLED screens'),
                 row('App font', fontSel),
                 row('App size', slider({ min: 80, max: 140, step: 5, value: a.uiScale, onchange: v => set('uiScale', v), fmt: v => v + ' %' })),
                 row('Cover size', slider({ min: 90, max: 260, step: 2, value: a.coverSize, onchange: v => set('coverSize', v), fmt: v => v + ' px' })),
@@ -53,6 +70,7 @@ export function renderSettings(el) {
                     db.patch('library', lib.books.map(b => [['books', b.id, 'metaDone'], false]))
                     importer.runMeta()
                 } }, 'Re-read details for all books'),
+                h('button.btn', { onclick: () => updateMany(lib.books.map(b => b.id)) }, icon('globe', 16), ' Fetch details and covers online'),
                 h('button.btn', { onclick: () => {
                     const gone = lib.books.filter(b => b.missing)
                     db.patch('library', gone.map(b => [['books', b.id, 'removed'], true]))
@@ -102,7 +120,7 @@ export function renderSettings(el) {
                             const obj = JSON.parse(await api.invoke('file:readText', p[0]))
                             if (!obj.iqraBackup && !obj.inkwellBackup) throw new Error('not a backup')
                             if (!await confirmBox('Restore this backup?', 'Your current library data, highlights, stats and settings will be replaced.', 'Restore', true)) return
-                            for (const name of ['library', 'settings', 'annotations', 'stats']) if (obj[name]) db.replace(name, obj[name])
+                            for (const name of ['library', 'settings', 'annotations', 'stats', 'study']) if (obj[name]) db.replace(name, obj[name])
                             applyAppTheme(); toast('Backup restored'); importer.runMeta()
                         } catch { toast('That file is not an Iqra backup', { type: 'error' }) }
                     } }, icon('upload', 16), ' Restore a backup'),
@@ -131,6 +149,8 @@ export function renderSettings(el) {
 // ---------- free books from Project Gutenberg ----------
 const disc = { query: '', lang: 'en', topic: '', results: null, loading: false, next: null }
 export function renderDiscover(el) {
+    const pre = sessionStorage.getItem('iqra-disc-q')
+    if (pre) { sessionStorage.removeItem('iqra-disc-q'); disc.query = pre; disc.results = null }
     const list = h('div.grid.disc')
     const status = h('p.muted')
     const folder = () => S.app.downloadFolder || `${importer.folders()[0] ?? appInfo.home}${appInfo.platform === 'win32' ? '\\' : '/'}Iqra Books`
@@ -166,8 +186,12 @@ export function renderDiscover(el) {
                     toast(`Added “${bk.title}”`)
                 } catch (e) { btn.disabled = false; btn.textContent = 'Try again'; toast('Download failed', { type: 'error' }) }
             } }, owned ? 'In your library' : epub ? 'Get book' : 'No EPUB')
+            const wished = isWished(bk.title)
+            const want = h('button.btn.small.want', { title: wished ? 'On your Want to read list' : 'Save to Want to read', disabled: owned || wished, onclick: () => {
+                addWish({ title: bk.title, author, cover, epub, source: 'gutenberg', gid: bk.id }); want.disabled = true; want.replaceChildren(icon('check', 14))
+            } }, icon(wished ? 'check' : 'bookmark-plus', 14))
             return h('div.book.disc', h('div.cover', cover ? h('img', { src: cover, loading: 'lazy', alt: '' }) : h('div.gen-cover', { style: { '--h': bk.id % 360 } }, h('span.gt', bk.title))),
-                h('div.meta', h('div.t', { title: bk.title }, bk.title), h('div.a', author || 'Unknown'), btn))
+                h('div.meta', h('div.t', { title: bk.title }, bk.title), h('div.a', author || 'Unknown'), h('div.disc-btns', btn, want)))
         }))
         status.textContent = disc.results?.length ? '' : 'No books found.'
         moreBtn.hidden = !disc.next

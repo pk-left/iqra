@@ -7,6 +7,9 @@ import { initLibrary, showRoute, addPathsAndReport } from './library.js'
 import { openReader, closeReader, readerOpen } from './reader.js'
 import { renderStats } from './stats.js'
 import { renderSettings, renderDiscover } from './pages.js'
+import { initStudy, renderReview, renderWords, renderWishlist } from './study.js'
+import { openBook } from './library.js'
+import { focus, ambient } from './focus.js'
 
 const api = window.api
 const readerOnly = location.hash.startsWith('#/read/')
@@ -50,7 +53,11 @@ async function boot() {
         stats: { title: 'Reading stats', render: renderStats },
         settings: { title: 'Settings', render: renderSettings },
         discover: { title: 'Free books', render: renderDiscover },
+        review: { title: 'Review', render: renderReview },
+        words: { title: 'My words', render: renderWords },
+        wishlist: { title: 'Want to read', render: renderWishlist },
     } })
+    initStudy({ nav: navigate, openBook })
     addEventListener('hashchange', onRoute)
     await onRoute()
     document.body.classList.add('ready')

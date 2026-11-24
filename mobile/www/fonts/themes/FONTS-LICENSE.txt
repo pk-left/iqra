@@ -1,0 +1,4 @@
+The fonts in this folder (EB Garamond, IM Fell English, Josefin Sans, Playfair Display, Old Standard TT,
+Bricolage Grotesque, DM Serif Display, Archivo, Archivo Black, Reem Kufi, Marcellus, Cinzel, Newsreader,
+Limelight, Space Mono, Syne, Young Serif) and Amiri in the parent folder are licensed under the
+SIL Open Font License 1.1 by their respective authors. https://openfontlicense.org

@@ -5,7 +5,10 @@ import { lib, importer, appInfo } from './store.js'
 import { S } from './settings.js'
 import { authorSort, titleSort, langName, GENRES } from './sort.js'
 import { coverToJpeg } from './formats.js'
+import { findOnline, updateMany } from './online.js'
 import { todayStats, streak } from './stats.js'
+import { dueCards, dueWords, wishCount, addWish } from './study.js'
+import { focus } from './focus.js'
 
 const api = window.api
 const state = { route: 'home', query: '', selected: new Set(), formatFilter: '', scrollMemo: {} }
@@ -74,7 +77,7 @@ function booksForRoute(route) {
 // ---------- cover + card ----------
 export function coverEl(b, lazy = true) {
     const url = lib.coverURL(b)
-    if (url) return h('img', { src: url, loading: lazy ? 'lazy' : 'eager', alt: '', draggable: false })
+    if (url) return h('img', { src: url, loading: lazy ? 'lazy' : 'eager', decoding: 'async', alt: '', draggable: false })
     const hue = parseInt(hashStr(b.title + b.author).slice(0, 6), 36) % 360
     return h('div.gen-cover', { style: { '--h': hue } }, h('span.gt', b.title), b.author ? h('span.ga', b.author) : null, h('span.gf', b.format.toUpperCase()))
 }
@@ -136,9 +139,11 @@ function bookMenu(x, y, b) {
         { label: 'Mark as unread', icon: 'rotate-ccw', run: () => each(x => lib.setStatus(x.id, 'unread')) },
         { label: !many && b.fav ? 'Remove from favorites' : 'Add to favorites', icon: 'heart', run: () => each(x => lib.update(x.id, { fav: many ? true : !b.fav })) },
         { label: 'Add to collection…', icon: 'folder-plus', run: () => pickCollection(ids) },
+        { label: !many && b.want ? 'Remove from Want to read' : 'Want to read', icon: 'bookmark-plus', run: () => each(x => lib.update(x.id, { want: many ? true : (b.want ? null : true) })) },
         state.route.startsWith('collections/') && { label: 'Remove from this collection', icon: 'x', run: () => removeFromCollection(state.route.split('/')[1], ids) },
         '-',
         !many && { label: 'Edit details…', icon: 'pencil', run: () => editDetails(b.id) },
+        { label: many ? `Fetch details and covers online (${ids.length})…` : 'Find details and cover online…', icon: 'globe', run: () => many ? updateMany(ids, 'your selection') : findOnline(b.id) },
         { label: many ? `Re-read details (${ids.length})` : 'Re-read details from file', icon: 'refresh-cw', run: () => { each(x => lib.update(x.id, { metaDone: false, edited: null, genreLooked: null })); importer.runMeta() } },
         !many && { label: 'Show in folder', icon: 'folder', run: () => api.invoke('shell:show', b.path) },
         '-',
@@ -199,6 +204,7 @@ export function showDetails(id) {
                     select([['unread', 'Unread'], ['reading', 'Reading'], ['finished', 'Finished']], b.status, v => lib.setStatus(id, v)),
                     iconBtn('heart', 'Favorite', e => { lib.update(id, { fav: !lib.get(id).fav }); e.currentTarget.classList.toggle('on') }, b.fav ? 'on' : ''),
                     iconBtn('pencil', 'Edit details', () => { m.close(); editDetails(id) }),
+                    iconBtn('globe', 'Find details and cover online', () => { m.close(); findOnline(id) }),
                     iconBtn('folder', 'Show in folder', () => api.invoke('shell:show', b.path))),
                 h('div.rating', [1, 2, 3, 4, 5].map(n => h('button', { class: (b.rating ?? 0) >= n ? 'on' : '', title: `${n} star${n > 1 ? 's' : ''}`, onclick: e => {
                     const v = lib.get(id).rating === n ? 0 : n
@@ -245,11 +251,11 @@ function editDetails(id) {
             const split = s => s.split(',').map(x => x.trim()).filter(Boolean)
             const authors = split(f.author)
             const idx = parseFloat(f.seriesIndex)
-            const edited = { ...(b.edited ?? {}) }
+            const edited = { ...(b.edited ?? {}) }, online = { ...(b.online ?? {}) }
             const next = { title: f.title.trim() || b.title, authors, author: authors.join(', '), series: f.series.trim(), seriesIndex: isNaN(idx) ? null : idx, genres: split(f.genres), year: f.year.trim(), language: f.language.trim(), description: f.description.trim(), kind: f.kind, tags: split(f.tags) }
             for (const k of ['title', 'author', 'series', 'seriesIndex', 'genres', 'year', 'language', 'description', 'kind'])
-                if (JSON.stringify(next[k]) !== JSON.stringify(b[k] ?? (k === 'genres' ? [] : k === 'seriesIndex' ? null : ''))) edited[k] = true
-            lib.update(id, { ...next, edited })
+                if (JSON.stringify(next[k]) !== JSON.stringify(b[k] ?? (k === 'genres' ? [] : k === 'seriesIndex' ? null : ''))) { edited[k] = true; delete online[k] }
+            lib.update(id, { ...next, edited, online })
             toast('Details saved')
         } }],
     })
@@ -262,10 +268,36 @@ function setHeader(title, count, { search = true, tools = true } = {}) {
     searchEl.parentNode.hidden = !search
     toolsEl.hidden = !tools
 }
+// Big shelves (thousands of books) are built in pieces: the first screenful straight away,
+// the rest in small batches while the app is idle, so opening a shelf or typing in search
+// never freezes the window. flushGrid() finishes the job at once when something needs every card.
+const FIRST_BATCH = 160, NEXT_BATCH = 240
+let gridFill = null
+function flushGrid() { if (gridFill) gridFill.finish() }
 function gridOf(books) {
+    if (gridFill) { gridFill.cancel(); gridFill = null }
     if (!books.length) return emptyState()
-    if (S.app.view === 'list') return h('div.list', h('div.brow.head', h('div.cover'), h('div.c1', 'Title'), h('div.c2', 'Series'), h('div.c3', 'Genre'), h('div.c4', 'Format'), h('div.c5', 'Progress'), h('div.c6', 'Added')), books.map(bookRow))
-    return h('div.grid', books.map(bookCard))
+    const list = S.app.view === 'list'
+    const make = list ? bookRow : bookCard
+    const box = list
+        ? h('div.list', h('div.brow.head', h('div.cover'), h('div.c1', 'Title'), h('div.c2', 'Series'), h('div.c3', 'Genre'), h('div.c4', 'Format'), h('div.c5', 'Progress'), h('div.c6', 'Added')))
+        : h('div.grid')
+    let i = 0
+    const add = n => { const end = Math.min(books.length, i + n); const frag = document.createDocumentFragment(); for (; i < end; i++) frag.append(make(books[i])); box.append(frag) }
+    add(FIRST_BATCH)
+    if (i < books.length) {
+        let handle = 0, dead = false
+        const idle = window.requestIdleCallback ? cb => requestIdleCallback(cb, { timeout: 120 }) : cb => setTimeout(cb, 16)
+        const unidle = window.cancelIdleCallback ?? clearTimeout
+        const step = () => { if (dead) return; add(NEXT_BATCH); if (i < books.length) handle = idle(step); else if (gridFill === job) gridFill = null }
+        const job = {
+            cancel() { dead = true; unidle(handle) },
+            finish() { if (dead) return; unidle(handle); add(books.length - i); dead = true; if (gridFill === job) gridFill = null },
+        }
+        gridFill = job
+        handle = idle(step)
+    }
+    return box
 }
 function emptyState() {
     const scanning = importer.state.scanning
@@ -356,13 +388,15 @@ function renderHome() {
     const hr = new Date().getHours()
     const year = String(new Date().getFullYear())
     const finishedThisYear = Object.values(data.stats.finished ?? {}).filter(d => d.startsWith(year)).length
-    const hero = h('section.hero',
+    const now = new Date()
+    const hero = h('section.hero', { dataset: { day: now.toLocaleDateString('en-GB', { weekday: 'long' }).toUpperCase(), date: now.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }).toUpperCase(), time: now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) } },
         h('div.hello', h('h1', hr < 5 ? 'Reading late' : hr < 12 ? 'Good morning' : hr < 18 ? 'Good afternoon' : 'Good evening'),
             h('p', books.length ? `${books.filter(b => b.kind !== 'document').length} books in your library · ${books.filter(b => b.status === 'finished').length} finished` : 'Your library is empty. Add some books to get started.')),
         h('div.goal', { onclick: () => navigate('stats'), title: 'Open reading stats' },
             h('div.ring', { style: { '--p': pct } }, h('b', String(mins)), h('small', `of ${goal} min`)),
             h('div.stamp', h('small', 'streak'), h('b', `${streak()} day${streak() === 1 ? '' : 's'}`), h('small', new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }))),
-            h('div', h('div.gl', pct >= 1 ? 'Daily goal reached' : 'Today’s reading'), h('div.gs', icon('flame', 14), ` ${streak()} day streak`), h('div.gs', icon('trophy', 14), ` ${finishedThisYear} of ${S.goals.yearlyBooks} books this year`))))
+            h('div', h('div.gl', pct >= 1 ? 'Daily goal reached' : 'Today’s reading'), h('div.gs', icon('flame', 14), ` ${streak()} day streak`), h('div.gs', icon('trophy', 14), ` ${finishedThisYear} of ${S.goals.yearlyBooks} books this year`),
+                dueCards().length || dueWords().length ? h('a.gs.link', { onclick: e => { e.stopPropagation(); navigate(dueCards().length ? 'review' : 'words') } }, icon('layers', 14), ` ${dueCards().length + dueWords().length} to review today`) : null)))
     const st = importer.state
     contentEl.replaceChildren(hero,
         !books.length ? emptyState() : '',
@@ -390,6 +424,10 @@ function renderSidebar() {
             item('status/unread', 'To read', 'bookmark', count(b => b.status === 'unread' && b.kind !== 'document')),
             item('status/finished', 'Finished', 'circle-check', count(b => b.status === 'finished')),
             item('favorites', 'Favorites', 'heart', count(b => b.fav)),
+            h('div.navhead', 'Study'),
+            item('review', 'Review', 'layers', dueCards().length || null),
+            item('words', 'My words', 'whole-word', Object.keys(data.study.words ?? {}).length || null),
+            item('wishlist', 'Want to read', 'bookmark-plus', wishCount() || null),
             h('div.navhead', 'Sorted for you'),
             item('authors', 'Authors', 'users', facet('authors', books).size),
             item('series', 'Series', 'layers', facet('series', books).size),
@@ -402,6 +440,7 @@ function renderSidebar() {
         h('div.side-foot',
             st.scanning || st.metaRunning ? h('div.progress', h('div.pl', st.scanning ? 'Scanning folders…' : `Reading details ${st.metaDone}/${st.metaTotal}`),
                 h('div.bar', h('i', { style: { width: st.scanning ? '15%' : `${(st.metaDone / Math.max(1, st.metaTotal)) * 100}%` } }))) : null,
+            h('a.nav', { onclick: e => focus.panel(e.currentTarget), title: 'Focus session and sounds' }, icon('timer', 17), h('span', 'Focus & sounds')),
             item('discover', 'Free books', 'compass'),
             item('stats', 'Reading stats', 'chart-column'),
             item('settings', 'Settings', 'settings')))
@@ -417,6 +456,7 @@ function renderSelectionBar() {
         h('button.btn.small', { onclick: () => ids.forEach(id => lib.setStatus(id, 'finished')) }, 'Finished'),
         h('button.btn.small', { onclick: () => ids.forEach(id => lib.setStatus(id, 'unread')) }, 'Unread'),
         h('button.btn.small', { onclick: () => pickCollection(ids) }, 'Add to collection'),
+        h('button.btn.small', { onclick: () => updateMany(ids, 'your selection') }, 'Fetch details'),
         h('button.btn.small.danger', { onclick: () => removeBooks(ids) }, 'Remove'),
         h('button.btn.small', { onclick: () => { state.selected.clear(); renderSelectionBar(); $$('.selected').forEach(e => e.classList.remove('selected')) } }, 'Clear'))
 }
@@ -451,14 +491,17 @@ export function initLibrary({ nav, pages }) {
         iconBtn('layout-grid', 'Grid or list', () => { S.setApp('view', S.app.view === 'grid' ? 'list' : 'grid'); render() }),
         h('input.size', { type: 'range', min: 90, max: 260, value: S.app.coverSize, title: 'Cover size', oninput: e => { document.documentElement.style.setProperty('--cover-w', e.target.value + 'px'); saveSize(+e.target.value) } }))
     const saveSize = debounce(v => S.setApp('coverSize', v), 400)
+    const fetchAll = () => updateMany(lib.books.filter(b => !b.removed).map(b => b.id))
+    const onlineBtn = h('button.btn', { title: 'Fetch the latest details and covers for your books', onclick: fetchAll }, icon('globe', 16), ' Details & covers')
     const addBtn = h('button.btn.primary', { onclick: e => menuAt(e.currentTarget, [
         { label: 'Add files…', icon: 'file-text', run: addFilesDialog },
         { label: 'Add a folder…', icon: 'folder-plus', run: addFolderDialog },
+        { label: 'Fetch details and covers online…', icon: 'globe', run: fetchAll },
         { label: 'Scan my folders now', icon: 'refresh-cw', run: async () => { const added = await importer.scan(); toast(added.length ? `Found ${added.length} new book${added.length === 1 ? '' : 's'}` : 'No new books found') } },
     ]) }, icon('plus', 16), ' Add')
     $('#topbar').replaceChildren(
         iconBtn('panel-left', 'Show or hide sidebar', () => { const c = !S.app.sidebarCollapsed; S.setApp('sidebarCollapsed', c); document.body.classList.toggle('side-collapsed', c) }),
-        h('div.title', titleEl, countEl), h('div.search', icon('search', 16), searchEl), toolsEl, addBtn)
+        h('div.title', titleEl, countEl), h('div.search', icon('search', 16), searchEl), toolsEl, onlineBtn, addBtn)
     document.body.classList.toggle('side-collapsed', !!S.app.sidebarCollapsed)
     state.pages = pages
 
@@ -481,6 +524,7 @@ export function initLibrary({ nav, pages }) {
             }
             if (structural) softRender()
         } else if (name === 'settings' && !ops) render()
+        else if (name === 'study' && (!ops || ops.some(([p]) => ['cards', 'words', 'wishlist'].includes(p[0])))) sideRender()
     })
     importer.onProgress(debounce(() => { renderSidebar() }, 300))
 
@@ -520,12 +564,15 @@ export function render(keepScroll) {
     const scroller = $('#content')
     const top = keepScroll ? scroller.scrollTop : (state.scrollMemo[route] ?? 0)
     renderSidebar()
+    if (gridFill) { gridFill.cancel(); gridFill = null }
     const [page] = route.split('/')
     const hasArg = route.includes('/')
     if (page === 'home') renderHome()
     else if (['authors', 'series', 'genres'].includes(page) && !hasArg) renderFacets(page)
     else if (state.pages[page]) { setHeader(state.pages[page].title, null, { search: false, tools: false }); state.pages[page].render(contentEl) }
     else renderShelf(route)
+    // coming back to a spot far down the shelf: build the rest now so the scroll lands in the right place
+    if (top > 0 && scroller.scrollHeight < top + scroller.clientHeight * 2) flushGrid()
     scroller.scrollTop = top
     renderSelectionBar()
 }

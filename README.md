@@ -13,7 +13,15 @@
 - **Tools while reading**: highlights and notes, bookmarks, full-text search, tap-to-define and translate, read-aloud and a word-at-a-time speed reader.
 - **Reading stats**: daily goal, streaks, a yearly book goal, and a year-at-a-glance heatmap.
 - **Free books**: browse and download public-domain books from inside the app.
-- **Two looks**: *Riso print* (the default: two-ink print, library cards, rubber stamps, and a navy "night print" in dark mode) or *Classic*.
+- **PDF highlights**: highlight and annotate PDFs (textbooks, lecture notes) the same way as EPUBs. Highlights stay put when you zoom.
+- **Arabic and right-to-left books**: Arabic, Persian, Urdu and Hebrew books lay out and turn pages right to left, with the Amiri typeface built in. Any book (manga too) can be switched by hand.
+- **Offline dictionary**: English definitions work without internet (WordNet, built in). Other languages still look up online.
+- **Review**: turn highlights into spaced-repetition cards with one key word hidden, and export them to Anki.
+- **My words**: save words you look up, with the sentence you found them in, then quiz yourself.
+- **Want to read**: a list for books you have and books you don't have yet, linked to the free-books page.
+- **Quote cards**: turn any passage into a shareable image in seven designs (square, post or story size).
+- **Focus & sounds**: timed reading sessions with a chime at the end, and live-generated rain, harmattan wind, ocean waves, fireplace, night train and deep hum.
+- **Fourteen looks**: *Riso print* and *Classic*, plus twelve styles with their own paper, type and ornaments: Old Library, Paperback, Broadsheet, Bògòlan, Indigo, Kente, Zellige, Andalus, Manuscript, Rainy window, Night train and Harmattan. Each comes with matching page colors for the reader.
 
 DRM-protected books (for example from the Kindle or Google Play stores) cannot be opened by any third-party reader, including this one.
 
@@ -51,8 +59,10 @@ app/
   index.html
   css/app.css        Layout and the Classic look
   css/riso.css       The Riso print look
+  css/themes.css     The twelve 1.2 styles (generated)
   js/                Library, reader, sorting, stats, settings (plain JavaScript modules)
   fonts/             Bundled reading and interface fonts (SIL Open Font License / Apache 2.0)
+  dict/              Offline English dictionary built from WordNet 3.0 (Princeton WordNet license)
   img/               Logo, paper textures and stamp wear for the Riso look
   vendor/            foliate-js (MIT), PDF.js (Apache 2.0), djvu-rs (MIT), mammoth (BSD), marked (MIT)
 ```
